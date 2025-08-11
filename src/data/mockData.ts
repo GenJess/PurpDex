@@ -1,4 +1,41 @@
-import { CryptoAsset, MarketStats } from '../types/crypto';
+import { CryptoAsset, MarketStats, HistoricalDataPoint, TechnicalIndicator } from '../types/crypto';
+
+// Generate historical data for a crypto asset
+function generateHistoricalData(basePrice: number, days: number = 365): HistoricalDataPoint[] {
+  const data: HistoricalDataPoint[] = [];
+  let currentPrice = basePrice * 0.7; // Start from 70% of current price
+  
+  for (let i = days; i >= 0; i--) {
+    const timestamp = new Date();
+    timestamp.setDate(timestamp.getDate() - i);
+    
+    // Simulate realistic price movement with trend toward current price
+    const trendFactor = (days - i) / days; // 0 to 1
+    const targetPrice = basePrice * (0.7 + 0.3 * trendFactor);
+    const volatility = basePrice * 0.05; // 5% daily volatility
+    
+    currentPrice += (targetPrice - currentPrice) * 0.1 + (Math.random() - 0.5) * volatility;
+    currentPrice = Math.max(currentPrice, basePrice * 0.1); // Don't go below 10% of current price
+    
+    data.push({
+      timestamp,
+      price: currentPrice,
+      volume: Math.random() * 1000000000 + 100000000, // Random volume
+    });
+  }
+  
+  return data;
+}
+
+// Calculate ROC (Rate of Change) for given periods
+function calculateROC(historicalData: HistoricalDataPoint[], days: number): number {
+  if (historicalData.length < days + 1) return 0;
+  
+  const currentPrice = historicalData[historicalData.length - 1].price;
+  const pastPrice = historicalData[historicalData.length - 1 - days].price;
+  
+  return ((currentPrice - pastPrice) / pastPrice) * 100;
+}
 
 export const mockMarketStats: MarketStats = {
   totalMarketCap: 2100000000000,
@@ -11,7 +48,8 @@ export const mockMarketStats: MarketStats = {
   tvlChange: 18.6,
 };
 
-export const mockCryptoData: CryptoAsset[] = [
+// Generate base crypto data with historical data and ROC calculations
+const baseCryptoData = [
   {
     id: '1',
     name: 'Bitcoin',
@@ -132,4 +170,64 @@ export const mockCryptoData: CryptoAsset[] = [
     sparklineData: [11.8, 12.0, 12.1, 12.3, 12.4, 12.45],
     color: '#2e3148',
   },
-];
+] as const;
+
+// Generate complete crypto data with historical data and ROC calculations
+export const mockCryptoData: CryptoAsset[] = baseCryptoData.map(crypto => {
+  const historicalData = generateHistoricalData(crypto.price);
+  const roc7d = calculateROC(historicalData, 7);
+  const roc30d = calculateROC(historicalData, 30);
+  
+  return {
+    ...crypto,
+    historicalData,
+    roc7d,
+    roc30d,
+  };
+});
+
+// Get detailed data for a specific crypto
+export const getCryptoById = (id: string): CryptoAsset | undefined => {
+  return mockCryptoData.find(crypto => crypto.id === id);
+};
+
+// Generate technical indicators for a crypto
+export const getTechnicalIndicators = (crypto: CryptoAsset): TechnicalIndicator[] => {
+  const rsi = 50 + Math.random() * 40; // 50-90 range
+  const macd = (Math.random() - 0.5) * 500;
+  const ma50 = crypto.price * (0.95 + Math.random() * 0.1);
+  const ma200 = crypto.price * (0.85 + Math.random() * 0.2);
+  
+  return [
+    {
+      label: 'RSI (14)',
+      value: rsi.toFixed(1),
+      status: rsi > 70 ? 'bearish' : rsi > 30 ? 'bullish' : 'neutral',
+    },
+    {
+      label: 'MACD',
+      value: macd > 0 ? `+${macd.toFixed(1)}` : macd.toFixed(1),
+      status: macd > 0 ? 'bullish' : 'bearish',
+    },
+    {
+      label: 'Moving Avg (50)',
+      value: `$${ma50.toFixed(2)}`,
+      status: crypto.price > ma50 ? 'bullish' : 'bearish',
+    },
+    {
+      label: 'Moving Avg (200)',
+      value: `$${ma200.toFixed(2)}`,
+      status: crypto.price > ma200 ? 'bullish' : 'bearish',
+    },
+    {
+      label: 'Bollinger Bands',
+      value: 'Upper',
+      status: 'neutral',
+    },
+    {
+      label: 'Support Level',
+      value: `$${(crypto.price * 0.92).toFixed(2)}`,
+      status: 'bullish',
+    },
+  ];
+};

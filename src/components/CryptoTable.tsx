@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { BarChart3, Grid, TrendingUp, TrendingDown } from 'lucide-react';
-import { CryptoAsset, ViewMode } from '../types/crypto';
+import { BarChart3, Grid, TrendingUp, TrendingDown, ChevronUp, ChevronDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CryptoAsset, ViewMode, SortField, SortDirection } from '../types/crypto';
 import { formatPrice, formatCurrency, formatPercentage, getMomentumColor, getChangeColor } from '../utils/formatters';
 import Sparkline from './Sparkline';
 
@@ -10,6 +11,98 @@ interface CryptoTableProps {
 
 const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
+  const [sortField, setSortField] = useState<SortField>('marketCap');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const sortedData = React.useMemo(() => {
+    return [...data].sort((a, b) => {
+      let aValue: number | string;
+      let bValue: number | string;
+
+      switch (sortField) {
+        case 'name':
+          aValue = a.name;
+          bValue = b.name;
+          break;
+        case 'price':
+          aValue = a.price;
+          bValue = b.price;
+          break;
+        case 'change24h':
+          aValue = a.change24h;
+          bValue = b.change24h;
+          break;
+        case 'roc7d':
+          aValue = a.roc7d;
+          bValue = b.roc7d;
+          break;
+        case 'roc30d':
+          aValue = a.roc30d;
+          bValue = b.roc30d;
+          break;
+        case 'volume24h':
+          aValue = a.volume24h;
+          bValue = b.volume24h;
+          break;
+        case 'marketCap':
+          aValue = a.marketCap;
+          bValue = b.marketCap;
+          break;
+        case 'momentum':
+          const momentumOrder = { hot: 4, active: 3, positive: 2, moderate: 1, neutral: 0 };
+          aValue = momentumOrder[a.momentum];
+          bValue = momentumOrder[b.momentum];
+          break;
+        default:
+          aValue = a.marketCap;
+          bValue = b.marketCap;
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+
+      return sortDirection === 'asc' 
+        ? (aValue as number) - (bValue as number)
+        : (bValue as number) - (aValue as number);
+    });
+  }, [data, sortField, sortDirection]);
+
+  const SortableHeader: React.FC<{ field: SortField; children: React.ReactNode; className?: string }> = ({ 
+    field, 
+    children, 
+    className = "" 
+  }) => (
+    <th 
+      className={`text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700 cursor-pointer hover:text-white transition-colors ${className}`}
+      onClick={() => handleSort(field)}
+    >
+      <div className="flex items-center gap-2">
+        {children}
+        <div className="flex flex-col">
+          <ChevronUp 
+            size={12} 
+            className={`${sortField === field && sortDirection === 'asc' ? 'text-purple-400' : 'text-gray-600'}`} 
+          />
+          <ChevronDown 
+            size={12} 
+            className={`${sortField === field && sortDirection === 'desc' ? 'text-purple-400' : 'text-gray-600'} -mt-1`} 
+          />
+        </div>
+      </div>
+    </th>
+  );
 
   const getMomentumLabel = (momentum: string): string => {
     return momentum.charAt(0).toUpperCase() + momentum.slice(1);
@@ -50,11 +143,9 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-          {data.map((crypto) => (
-            <div
-              key={crypto.id}
-              className="bg-gray-700/30 border border-gray-600 rounded-2xl p-6 hover:transform hover:-translate-y-1 hover:border-purple-500/30 transition-all duration-300"
-            >
+          {sortedData.map((crypto) => (
+            <Link key={crypto.id} to={`/coin/${crypto.id}`}>
+              <div className="bg-gray-700/30 border border-gray-600 rounded-2xl p-6 hover:transform hover:-translate-y-1 hover:border-purple-500/30 transition-all duration-300 cursor-pointer">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div
@@ -74,7 +165,7 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-2 gap-4 mb-4">
                 <div className="text-center">
                   <div className="text-lg font-bold text-white font-mono mb-1">
                     {formatPrice(crypto.price)}
@@ -87,6 +178,24 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
                   </div>
                   <div className="text-xs text-gray-400">24h Change</div>
                 </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="text-center">
+                  <div className={`text-lg font-bold mb-1 ${crypto.roc7d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatPercentage(crypto.roc7d)}
+                  </div>
+                  <div className="text-xs text-gray-400">7d ROC</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-lg font-bold mb-1 ${crypto.roc30d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatPercentage(crypto.roc30d)}
+                  </div>
+                  <div className="text-xs text-gray-400">30d ROC</div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="text-center">
                   <div className="text-lg font-bold text-white font-mono mb-1">
                     {formatCurrency(crypto.volume24h)}
@@ -109,7 +218,8 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
                   color={crypto.change24h >= 0 ? '#10B981' : '#EF4444'}
                 />
               </div>
-            </div>
+              </div>
+            </Link>
           ))}
         </div>
       </div>
@@ -146,35 +256,21 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         <table className="w-full">
           <thead>
             <tr className="bg-gray-700/30">
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                Asset
-              </th>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                Price
-              </th>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                24h Change
-              </th>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                Volume (24h)
-              </th>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                Market Cap
-              </th>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                Momentum
-              </th>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">
-                7d Chart
-              </th>
+              <SortableHeader field="name">Asset</SortableHeader>
+              <SortableHeader field="price">Price</SortableHeader>
+              <SortableHeader field="change24h">24h Change</SortableHeader>
+              <SortableHeader field="roc7d">7d ROC</SortableHeader>
+              <SortableHeader field="roc30d">30d ROC</SortableHeader>
+              <SortableHeader field="volume24h">Volume (24h)</SortableHeader>
+              <SortableHeader field="marketCap">Market Cap</SortableHeader>
+              <SortableHeader field="momentum">Momentum</SortableHeader>
+              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">7d Chart</th>
             </tr>
           </thead>
           <tbody>
-            {data.map((crypto) => (
-              <tr
-                key={crypto.id}
-                className="hover:bg-gray-700/30 transition-colors border-b border-gray-800/30 last:border-b-0"
-              >
+            {sortedData.map((crypto) => (
+              <Link key={crypto.id} to={`/coin/${crypto.id}`} className="contents">
+                <tr className="hover:bg-gray-700/30 transition-colors border-b border-gray-800/30 last:border-b-0 cursor-pointer">
                 <td className="p-6">
                   <div className="flex items-center gap-4">
                     <div
@@ -203,6 +299,18 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
                     {formatPercentage(crypto.change24h)}
                   </div>
                 </td>
+                <td className="p-6">
+                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(crypto.roc7d)}`}>
+                    {crypto.roc7d >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    {formatPercentage(crypto.roc7d)}
+                  </div>
+                </td>
+                <td className="p-6">
+                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(crypto.roc30d)}`}>
+                    {crypto.roc30d >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                    {formatPercentage(crypto.roc30d)}
+                  </div>
+                </td>
                 <td className="p-6 font-mono text-white text-sm">
                   {formatCurrency(crypto.volume24h)}
                 </td>
@@ -224,7 +332,8 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
                     />
                   </div>
                 </td>
-              </tr>
+                </tr>
+              </Link>
             ))}
           </tbody>
         </table>
