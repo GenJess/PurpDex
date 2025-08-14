@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, TrendingUp, TrendingDown, Star, BarChart3, Zap, Shield, Clock, Target, Activity } from 'lucide-react';
+import { useRealTimePrice } from '../hooks/useRealTimePrice';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -17,6 +18,8 @@ import 'chartjs-adapter-date-fns';
 import { getCryptoById, getTechnicalIndicators } from '../data/mockData';
 import { formatPrice, formatCurrency, formatPercentage } from '../utils/formatters';
 import { CryptoAsset, TechnicalIndicator } from '../types/crypto';
+import PriceDisplay from '../components/PriceDisplay';
+import LiveIndicator from '../components/LiveIndicator';
 
 ChartJS.register(
   CategoryScale,
@@ -36,8 +39,10 @@ const CryptoDetailsPage: React.FC = () => {
   const [crypto, setCrypto] = useState<CryptoAsset | null>(null);
   const [technicalIndicators, setTechnicalIndicators] = useState<TechnicalIndicator[]>([]);
   const [activeTimeframe, setActiveTimeframe] = useState<Timeframe>('1d');
-  const [currentPrice, setCurrentPrice] = useState<number>(0);
-  const [priceChange, setPriceChange] = useState<number>(0);
+  const [chartData, setChartData] = useState<any>(null);
+  
+  // Real-time price hook
+  const { prices, isConnected, lastUpdate } = useRealTimePrice(crypto ? [crypto] : []);
 
   useEffect(() => {
     if (id) {
@@ -45,27 +50,16 @@ const CryptoDetailsPage: React.FC = () => {
       if (cryptoData) {
         setCrypto(cryptoData);
         setTechnicalIndicators(getTechnicalIndicators(cryptoData));
-        setCurrentPrice(cryptoData.price);
-        setPriceChange(cryptoData.change24h);
       }
     }
   }, [id]);
 
-  // Simulate real-time price updates
+  // Update chart data when crypto or timeframe changes
   useEffect(() => {
-    if (!crypto) return;
-
-    const interval = setInterval(() => {
-      const change = (Math.random() - 0.5) * (crypto.price * 0.001); // ±0.1% change
-      const newPrice = currentPrice + change;
-      const changePercent = ((newPrice - crypto.price) / crypto.price) * 100;
-      
-      setCurrentPrice(newPrice);
-      setPriceChange(changePercent);
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [crypto, currentPrice]);
+    if (crypto) {
+      setChartData(generateChartData(activeTimeframe));
+    }
+  }, [crypto, activeTimeframe]);
 
   if (!crypto) {
     return (
@@ -84,12 +78,17 @@ const CryptoDetailsPage: React.FC = () => {
     const dataPoints = timeframe === '1h' ? 60 : timeframe === '1d' ? 100 : timeframe === '1w' ? 168 : 365;
     const data = crypto.historicalData.slice(-dataPoints);
     
+    // Get current real-time price
+    const currentPriceData = prices.get(crypto.id);
+    const currentPrice = currentPriceData?.price || crypto.price;
+    const priceChange = currentPriceData?.change24h || crypto.change24h;
+    
     return {
       labels: data.map(point => point.timestamp),
       datasets: [
         {
           label: `${crypto.symbol} Price`,
-          data: data.map(point => point.price),
+          data: [...data.map(point => point.price), currentPrice], // Add current price as latest point
           borderColor: priceChange >= 0 ? '#00ff88' : '#ff007f',
           backgroundColor: priceChange >= 0 ? 'rgba(0, 255, 136, 0.1)' : 'rgba(255, 0, 127, 0.1)',
           borderWidth: 2,
@@ -104,6 +103,12 @@ const CryptoDetailsPage: React.FC = () => {
       ],
     };
   };
+
+  // Get current real-time data
+  const currentPriceData = prices.get(crypto?.id || '');
+  const currentPrice = currentPriceData?.price || crypto?.price || 0;
+  const currentChange = currentPriceData?.change24h || crypto?.change24h || 0;
+  const currentVolume = currentPriceData?.volume24h || crypto?.volume24h || 0;
 
   const chartOptions = {
     responsive: true,
@@ -240,16 +245,21 @@ const CryptoDetailsPage: React.FC = () => {
         </div>
         
         <div className="text-center lg:text-right">
-          <div className="text-5xl font-bold text-white font-mono mb-2">
-            {formatPrice(currentPrice)}
+          <div className="mb-2">
+            <PriceDisplay 
+              price={currentPrice}
+              previousPrice={crypto.price}
+              change24h={currentChange}
+              size="xl"
+              showChange={false}
+            />
           </div>
-          <div className={`flex items-center gap-2 justify-center lg:justify-end text-xl font-semibold ${priceChange >= 0 ? 'text-green-400' : 'text-pink-400'}`}>
-            {priceChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
-            {priceChange >= 0 ? '+' : ''}{formatPercentage(priceChange)}
+          <div className={`flex items-center gap-2 justify-center lg:justify-end text-xl font-semibold ${currentChange >= 0 ? 'text-green-400' : 'text-pink-400'}`}>
+            {currentChange >= 0 ? <TrendingUp size={20} /> : <TrendingDown size={20} />}
+            {formatPercentage(currentChange)}
           </div>
-          <div className="flex items-center gap-2 justify-center lg:justify-end text-sm text-green-400 mt-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            Live Price
+          <div className="flex items-center gap-2 justify-center lg:justify-end mt-2">
+            <LiveIndicator isConnected={isConnected} lastUpdate={lastUpdate} size="md" />
           </div>
         </div>
       </div>
@@ -277,7 +287,7 @@ const CryptoDetailsPage: React.FC = () => {
             </div>
           </div>
           <div className="h-96">
-            <Line data={generateChartData(activeTimeframe)} options={chartOptions} />
+            {chartData && <Line data={chartData} options={chartOptions} />}
           </div>
         </div>
 
@@ -291,7 +301,7 @@ const CryptoDetailsPage: React.FC = () => {
             <div className="space-y-4">
               {[
                 { label: 'Market Cap', value: formatCurrency(crypto.marketCap) },
-                { label: '24h Volume', value: formatCurrency(crypto.volume24h) },
+                { label: '24h Volume', value: formatCurrency(currentVolume) },
                 { label: '7d ROC', value: formatPercentage(crypto.roc7d), color: crypto.roc7d >= 0 ? 'text-green-400' : 'text-pink-400' },
                 { label: '30d ROC', value: formatPercentage(crypto.roc30d), color: crypto.roc30d >= 0 ? 'text-green-400' : 'text-pink-400' },
                 { label: 'Market Cap Rank', value: `#${crypto.id}` },
@@ -313,11 +323,11 @@ const CryptoDetailsPage: React.FC = () => {
             </h3>
             <div className="space-y-4">
               {[
-                { label: '24h High', value: formatPrice(crypto.price * 1.05) },
-                { label: '24h Low', value: formatPrice(crypto.price * 0.95) },
+                { label: '24h High', value: formatPrice(currentPrice * 1.05) },
+                { label: '24h Low', value: formatPrice(currentPrice * 0.95) },
                 { label: '7d Change', value: formatPercentage(crypto.roc7d), color: crypto.roc7d >= 0 ? 'text-green-400' : 'text-pink-400' },
                 { label: '30d Change', value: formatPercentage(crypto.roc30d), color: crypto.roc30d >= 0 ? 'text-green-400' : 'text-pink-400' },
-                { label: 'All-Time High', value: formatPrice(crypto.price * 1.6) },
+                { label: 'All-Time High', value: formatPrice(currentPrice * 1.6) },
               ].map((stat, index) => (
                 <div key={index} className="flex justify-between items-center py-3 border-b border-gray-700/30 last:border-b-0">
                   <span className="text-sm text-gray-400 font-medium">{stat.label}</span>
@@ -334,7 +344,7 @@ const CryptoDetailsPage: React.FC = () => {
       {/* Market Data Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {[
-          { title: 'Trading Volume', value: formatCurrency(crypto.volume24h), subtitle: '24h Volume • +12.1%', icon: Zap, color: 'cyan' },
+          { title: 'Trading Volume', value: formatCurrency(currentVolume), subtitle: '24h Volume • +12.1%', icon: Zap, color: 'cyan' },
           { title: 'Fear & Greed Index', value: '73', subtitle: 'Greed • Market Sentiment', icon: Clock, color: 'amber' },
           { title: 'Market Dominance', value: '52.3%', subtitle: `${crypto.symbol} Market Share`, icon: Shield, color: 'purple' },
           { title: 'Volatility Index', value: '2.8%', subtitle: '7-Day Volatility', icon: Activity, color: 'pink' },
