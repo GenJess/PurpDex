@@ -29,18 +29,28 @@ interface BinanceStreamData {
   data: BinanceTickerData;
 }
 
-// Symbol mapping - match your crypto IDs to Binance symbols
+// Symbol mapping for Binance (expandable)
 const SYMBOL_MAPPING: Record<string, string> = {
-  '1': 'BTCUSDT',     // Bitcoin
-  '2': 'ETHUSDT',     // Ethereum  
-  '3': 'SOLUSDT',     // Solana
-  '4': 'ADAUSDT',     // Cardano
-  '5': 'MATICUSDT',   // Polygon
-  '6': 'LINKUSDT',    // Chainlink
-  '7': 'AVAXUSDT',    // Avalanche
-  '8': 'DOTUSDT',     // Polkadot
-  '9': 'UNIUSDT',     // Uniswap
-  '10': 'ATOMUSDT',   // Cosmos
+  'bitcoin': 'BTCUSDT',
+  'ethereum': 'ETHUSDT',
+  'solana': 'SOLUSDT',
+  'cardano': 'ADAUSDT',
+  'avalanche-2': 'AVAXUSDT',
+  'polkadot': 'DOTUSDT',
+  'chainlink': 'LINKUSDT',
+  'polygon': 'MATICUSDT',
+  'uniswap': 'UNIUSDT',
+  'litecoin': 'LTCUSDT',
+  'bitcoin-cash': 'BCHUSDT',
+  'stellar': 'XLMUSDT',
+  'cosmos': 'ATOMUSDT',
+  'algorand': 'ALGOUSDT',
+  'tezos': 'XTZUSDT',
+  'filecoin': 'FILUSDT',
+  'the-sandbox': 'SANDUSDT',
+  'decentraland': 'MANAUSDT',
+  'axie-infinity': 'AXSUSDT',
+  'near': 'NEARUSDT'
 };
 
 export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceReturn => {
@@ -62,7 +72,7 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
   const POLLING_INTERVAL = 10000; // 10 seconds for API fallback
   const PRICE_SMOOTHING_THRESHOLD = 100; // ms between price updates for same symbol
 
-  // Initialize prices
+  // Initialize prices from crypto data
   useEffect(() => {
     const initialPrices = new Map<string, PriceUpdate>();
     
@@ -79,12 +89,12 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
     setPrices(initialPrices);
   }, [cryptoData]);
 
-  // Smooth price updates to prevent jitter
+  // Smooth price updates to prevent excessive re-renders
   const updatePriceSmooth = useCallback((cryptoId: string, newPrice: PriceUpdate) => {
     const now = Date.now();
     const lastUpdate = lastPriceUpdateRef.current.get(cryptoId) || 0;
     
-    // Throttle updates per symbol to prevent excessive re-renders
+    // Throttle updates per symbol
     if (now - lastUpdate < PRICE_SMOOTHING_THRESHOLD) {
       return;
     }
@@ -123,12 +133,12 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
       const streamNames = symbols.join('/');
       const wsUrl = `wss://stream.binance.com:9443/ws/${streamNames}`;
       
-      console.log('🚀 Connecting to Binance WebSocket:', wsUrl);
+      console.log('🔗 Connecting to Binance WebSocket with', symbols.length, 'streams');
       
       wsRef.current = new WebSocket(wsUrl);
       
       wsRef.current.onopen = () => {
-        console.log('✅ WebSocket connected - Real-time prices active!');
+        console.log('✅ WebSocket connected');
         setIsConnected(true);
         setConnectionType('websocket');
         setReconnectAttempts(0);
@@ -164,22 +174,26 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
       };
       
       wsRef.current.onclose = (event) => {
-        console.log('WebSocket closed:', event.code, event.reason);
+        console.log('🔌 WebSocket closed:', event.code, event.reason);
         setIsConnected(false);
         
         if (!event.wasClean && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-          setReconnectAttempts(prev => prev + 1);
+          const newAttempts = reconnectAttempts + 1;
+          setReconnectAttempts(newAttempts);
+          
           reconnectTimeoutRef.current = setTimeout(() => {
+            console.log(`🔄 Reconnecting... (attempt ${newAttempts})`);
             connectWebSocket();
           }, RECONNECT_DELAY * Math.pow(2, reconnectAttempts)); // Exponential backoff
         } else {
-          console.log('Max reconnect attempts reached, falling back to polling');
+          console.log('⚠️ Max reconnect attempts reached, falling back to polling');
           startPolling();
         }
       };
       
       wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error('❌ WebSocket error:', error);
+        setIsConnected(false);
         startPolling();
       };
       
@@ -197,11 +211,13 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
         .filter(Boolean);
       
       if (symbols.length === 0) {
-        // Fall back to simulation if no symbols mapped
+        console.warn('No symbols for API polling, starting simulation');
         startSimulation();
         return;
       }
 
+      console.log('📡 Fetching prices from Binance API');
+      
       // Binance 24hr ticker API
       const response = await fetch('https://api.binance.com/api/v3/ticker/24hr');
       
@@ -235,11 +251,10 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
       if (!isConnected) {
         setIsConnected(true);
         setConnectionType('polling');
-        console.log('📊 API polling active - 10s updates');
       }
       
     } catch (error) {
-      console.error('Failed to fetch from Binance API:', error);
+      console.error('❌ Failed to fetch from Binance API:', error);
       
       if (connectionType === 'polling') {
         setIsConnected(false);
@@ -264,9 +279,9 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
     pollingIntervalRef.current = setInterval(fetchBinancePrices, POLLING_INTERVAL);
   }, [fetchBinancePrices]);
 
-  // Simulation fallback (your current implementation, simplified)
+  // Simulation fallback for demo purposes
   const startSimulation = useCallback(() => {
-    console.log('🎮 Starting price simulation');
+    console.log('🎮 Starting price simulation (demo mode)');
     setConnectionType('simulation');
     setIsConnected(true);
     
@@ -283,16 +298,25 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
           const currentPrice = prevPrices.get(crypto.id);
           if (!currentPrice) return;
 
-          // Simple simulation (much simplified from your original)
-          const volatility = Math.max(0.0001, Math.min(0.01, 1000000000 / crypto.marketCap));
-          const randomChange = (Math.random() - 0.5) * volatility;
-          const newPrice = Math.max(currentPrice.price * (1 + randomChange), crypto.price * 0.5);
+          // Realistic simulation based on market cap
+          const volatility = Math.max(0.0001, Math.min(0.005, 1000000000 / crypto.marketCap));
+          const randomChange = (Math.random() - 0.5) * 2 * volatility;
+          const trendFactor = Math.sin(Date.now() / 10000) * 0.0001; // Subtle trend
+          const totalChange = randomChange + trendFactor;
+          
+          const newPrice = Math.max(
+            currentPrice.price * (1 + totalChange), 
+            crypto.price * 0.1 // Don't let it go below 10% of original
+          );
+          
+          // Calculate 24h change
+          const change24h = ((newPrice - crypto.price) / crypto.price) * 100;
           
           newPrices.set(crypto.id, {
             id: crypto.id,
             price: newPrice,
-            change24h: currentPrice.change24h + (randomChange * 10),
-            volume24h: currentPrice.volume24h * (1 + (Math.random() - 0.5) * 0.02),
+            change24h: change24h,
+            volume24h: currentPrice.volume24h * (1 + (Math.random() - 0.5) * 0.05),
             timestamp: now,
           });
         });
@@ -307,11 +331,15 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
   useEffect(() => {
     if (cryptoData.length === 0) return;
 
+    console.log('🚀 Initializing real-time price connection');
+    
     // Try WebSocket first
     connectWebSocket();
     
-    // Cleanup
+    // Cleanup function
     return () => {
+      console.log('🧹 Cleaning up connections');
+      
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -322,7 +350,7 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [connectWebSocket, cryptoData]);
+  }, [connectWebSocket, cryptoData.length]);
 
   return { 
     prices, 
