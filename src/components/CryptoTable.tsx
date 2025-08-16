@@ -148,15 +148,6 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
     setDragOverColumn(null);
   }, []);
 
-  const handleSort = useCallback((field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('desc');
-    }
-  }, [sortField, sortDirection]);
-
   // Memoize sorted data to prevent unnecessary recalculations
   const sortedData = useMemo(() => {
     return [...data].sort((a, b) => {
