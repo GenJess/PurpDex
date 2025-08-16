@@ -29,14 +29,18 @@ interface BinanceStreamData {
   data: BinanceTickerData;
 }
 
-// Symbol mapping for Binance (you'll need to expand this)
+// Symbol mapping - match your crypto IDs to Binance symbols
 const SYMBOL_MAPPING: Record<string, string> = {
-  'bitcoin': 'BTCUSDT',
-  'ethereum': 'ETHUSDT',
-  'solana': 'SOLUSDT',
-  'cardano': 'ADAUSDT',
-  'avalanche': 'AVAXUSDT',
-  // Add more mappings as needed
+  '1': 'BTCUSDT',     // Bitcoin
+  '2': 'ETHUSDT',     // Ethereum  
+  '3': 'SOLUSDT',     // Solana
+  '4': 'ADAUSDT',     // Cardano
+  '5': 'MATICUSDT',   // Polygon
+  '6': 'LINKUSDT',    // Chainlink
+  '7': 'AVAXUSDT',    // Avalanche
+  '8': 'DOTUSDT',     // Polkadot
+  '9': 'UNIUSDT',     // Uniswap
+  '10': 'ATOMUSDT',   // Cosmos
 };
 
 export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceReturn => {
@@ -50,15 +54,13 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
   const wsRef = useRef<WebSocket | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const priceBufferRef = useRef<Map<string, PriceUpdate[]>>(new Map());
   const lastPriceUpdateRef = useRef<Map<string, number>>(new Map());
 
   // Configuration
   const MAX_RECONNECT_ATTEMPTS = 5;
   const RECONNECT_DELAY = 3000;
   const POLLING_INTERVAL = 10000; // 10 seconds for API fallback
-  const PRICE_BUFFER_SIZE = 10;
-  const PRICE_SMOOTHING_THRESHOLD = 50; // ms between price updates for same symbol
+  const PRICE_SMOOTHING_THRESHOLD = 100; // ms between price updates for same symbol
 
   // Initialize prices
   useEffect(() => {
@@ -91,16 +93,6 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
     
     setPrices(prev => {
       const updated = new Map(prev);
-      
-      // Add to buffer for smoothing
-      const buffer = priceBufferRef.current.get(cryptoId) || [];
-      buffer.push(newPrice);
-      if (buffer.length > PRICE_BUFFER_SIZE) {
-        buffer.shift();
-      }
-      priceBufferRef.current.set(cryptoId, buffer);
-      
-      // Use the latest price
       updated.set(cryptoId, newPrice);
       return updated;
     });
@@ -131,12 +123,12 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
       const streamNames = symbols.join('/');
       const wsUrl = `wss://stream.binance.com:9443/ws/${streamNames}`;
       
-      console.log('Connecting to Binance WebSocket:', wsUrl);
+      console.log('🚀 Connecting to Binance WebSocket:', wsUrl);
       
       wsRef.current = new WebSocket(wsUrl);
       
       wsRef.current.onopen = () => {
-        console.log('✅ WebSocket connected');
+        console.log('✅ WebSocket connected - Real-time prices active!');
         setIsConnected(true);
         setConnectionType('websocket');
         setReconnectAttempts(0);
@@ -243,6 +235,7 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
       if (!isConnected) {
         setIsConnected(true);
         setConnectionType('polling');
+        console.log('📊 API polling active - 10s updates');
       }
       
     } catch (error) {
