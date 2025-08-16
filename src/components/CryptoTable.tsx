@@ -33,16 +33,16 @@ const SmoothPriceDisplay: React.FC<{
   );
 };
 
-// Smooth percentage display with transition
+// Smooth percentage display with fixed width to prevent jitter
 const SmoothPercentage: React.FC<{
   value: number;
   showIcon?: boolean;
   className?: string;
 }> = ({ value, showIcon = true, className = "" }) => {
   return (
-    <div className={`transition-all duration-300 ease-out inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(value)} ${className}`}>
+    <div className={`transition-colors duration-300 ease-out inline-flex items-center justify-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold min-w-[80px] ${getChangeColor(value)} ${className}`}>
       {showIcon && (value >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />)}
-      <span className="transition-all duration-300 ease-out">
+      <span className="transition-colors duration-300 ease-out font-mono">
         {formatPercentage(value)}
       </span>
     </div>
@@ -202,7 +202,7 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
             </div>
             <div className="text-center">
               <div className="mb-1">
-                <SmoothPercentage value={currentChange} showIcon={false} className="text-lg font-bold px-0" />
+                <SmoothPercentage value={currentChange} showIcon={false} className="text-lg font-bold px-0 min-w-[90px]" />
               </div>
               <div className="text-xs text-gray-400">24h Change</div>
             </div>
@@ -211,13 +211,13 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="text-center">
               <div className="mb-1">
-                <SmoothPercentage value={crypto.roc7d} showIcon={false} className="text-lg font-bold px-0" />
+                <SmoothPercentage value={crypto.roc7d} showIcon={false} className="text-lg font-bold px-0 min-w-[90px]" />
               </div>
               <div className="text-xs text-gray-400">7d ROC</div>
             </div>
             <div className="text-center">
               <div className="mb-1">
-                <SmoothPercentage value={crypto.roc30d} showIcon={false} className="text-lg font-bold px-0" />
+                <SmoothPercentage value={crypto.roc30d} showIcon={false} className="text-lg font-bold px-0 min-w-[90px]" />
               </div>
               <div className="text-xs text-gray-400">30d ROC</div>
             </div>
@@ -394,7 +394,18 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
       </div>
       
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full table-fixed">
+          <colgroup>
+            <col className="w-48" />  {/* Asset */}
+            <col className="w-32" />  {/* Price */}
+            <col className="w-28" />  {/* 24h Change */}
+            <col className="w-28" />  {/* 7d ROC */}
+            <col className="w-28" />  {/* 30d ROC */}
+            <col className="w-32" />  {/* Volume */}
+            <col className="w-32" />  {/* Market Cap */}
+            <col className="w-28" />  {/* Momentum */}
+            <col className="w-24" />  {/* Chart */}
+          </colgroup>
           <thead>
             <tr className="bg-gray-700/30">
               <SortableHeader field="name">Asset</SortableHeader>
