@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { BarChart3, Grid, TrendingUp, TrendingDown, ChevronUp, ChevronDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useRealTimePrice } from '../hooks/useRealTimePrice';
@@ -12,22 +12,60 @@ interface CryptoTableProps {
   data: CryptoAsset[];
 }
 
+// Smooth price transition component
+const SmoothPriceDisplay: React.FC<{
+  price: number;
+  previousPrice: number;
+  change24h: number;
+  showChange?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+}> = ({ price, previousPrice, change24h, showChange = true, size = 'md' }) => {
+  return (
+    <div className="transition-all duration-300 ease-out">
+      <PriceDisplay 
+        price={price}
+        previousPrice={previousPrice}
+        change24h={change24h}
+        showChange={showChange}
+        size={size}
+      />
+    </div>
+  );
+};
+
+// Smooth percentage display with transition
+const SmoothPercentage: React.FC<{
+  value: number;
+  showIcon?: boolean;
+  className?: string;
+}> = ({ value, showIcon = true, className = "" }) => {
+  return (
+    <div className={`transition-all duration-300 ease-out inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(value)} ${className}`}>
+      {showIcon && (value >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />)}
+      <span className="transition-all duration-300 ease-out">
+        {formatPercentage(value)}
+      </span>
+    </div>
+  );
+};
+
 const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('table');
   const [sortField, setSortField] = useState<SortField>('marketCap');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const { prices, isConnected, lastUpdate } = useRealTimePrice(data);
 
-  const handleSort = (field: SortField) => {
+  const handleSort = useCallback((field: SortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDirection('desc');
     }
-  };
+  }, [sortField, sortDirection]);
 
-  const sortedData = React.useMemo(() => {
+  // Memoize sorted data to prevent unnecessary recalculations
+  const sortedData = useMemo(() => {
     return [...data].sort((a, b) => {
       // Get real-time prices for sorting
       const aPriceData = prices.get(a.id);
@@ -87,13 +125,13 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
     });
   }, [data, sortField, sortDirection, prices]);
 
-  const SortableHeader: React.FC<{ field: SortField; children: React.ReactNode; className?: string }> = ({ 
-    field, 
-    children, 
-    className = "" 
-  }) => (
+  const SortableHeader: React.FC<{ 
+    field: SortField; 
+    children: React.ReactNode; 
+    className?: string 
+  }> = ({ field, children, className = "" }) => (
     <th 
-      className={`text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700 cursor-pointer hover:text-white transition-colors ${className}`}
+      className={`text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700 cursor-pointer hover:text-white transition-colors duration-200 ${className}`}
       onClick={() => handleSort(field)}
     >
       <div className="flex items-center gap-2">
@@ -101,11 +139,15 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         <div className="flex flex-col">
           <ChevronUp 
             size={12} 
-            className={`${sortField === field && sortDirection === 'asc' ? 'text-purple-400' : 'text-gray-600'}`} 
+            className={`transition-colors duration-200 ${
+              sortField === field && sortDirection === 'asc' ? 'text-purple-400' : 'text-gray-600'
+            }`} 
           />
           <ChevronDown 
             size={12} 
-            className={`${sortField === field && sortDirection === 'desc' ? 'text-purple-400' : 'text-gray-600'} -mt-1`} 
+            className={`transition-colors duration-200 ${
+              sortField === field && sortDirection === 'desc' ? 'text-purple-400' : 'text-gray-600'
+            } -mt-1`} 
           />
         </div>
       </div>
@@ -115,6 +157,179 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
   const getMomentumLabel = (momentum: string): string => {
     return momentum.charAt(0).toUpperCase() + momentum.slice(1);
   };
+
+  // Memoized card component to prevent unnecessary re-renders
+  const CryptoCard = React.memo(({ crypto }: { crypto: CryptoAsset }) => {
+    const priceData = prices.get(crypto.id);
+    const currentPrice = priceData?.price || crypto.price;
+    const currentChange = priceData?.change24h || crypto.change24h;
+    const currentVolume = priceData?.volume24h || crypto.volume24h;
+    
+    return (
+      <Link key={crypto.id} to={`/coin/${crypto.id}`}>
+        <div className="bg-gray-700/30 border border-gray-600 rounded-2xl p-6 hover:transform hover:-translate-y-1 hover:border-purple-500/30 transition-all duration-300 cursor-pointer">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm relative overflow-hidden transition-all duration-300"
+                style={{ backgroundColor: crypto.color }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse transform -skew-x-12" />
+                {crypto.symbol.slice(0, 2)}
+              </div>
+              <div>
+                <div className="font-semibold text-white">{crypto.name}</div>
+                <div className="text-sm text-gray-400">{crypto.symbol}</div>
+              </div>
+            </div>
+            <div className={`px-3 py-1 rounded-full text-xs font-semibold uppercase transition-all duration-300 ${getMomentumColor(crypto.momentum)}`}>
+              {getMomentumLabel(crypto.momentum)}
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="text-center">
+              <div className="mb-1">
+                <SmoothPriceDisplay 
+                  price={currentPrice}
+                  previousPrice={crypto.price}
+                  change24h={currentChange}
+                  size="lg"
+                  showChange={false}
+                />
+              </div>
+              <div className="text-xs text-gray-400">Price</div>
+            </div>
+            <div className="text-center">
+              <div className="mb-1">
+                <SmoothPercentage value={currentChange} showIcon={false} className="text-lg font-bold px-0" />
+              </div>
+              <div className="text-xs text-gray-400">24h Change</div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="text-center">
+              <div className="mb-1">
+                <SmoothPercentage value={crypto.roc7d} showIcon={false} className="text-lg font-bold px-0" />
+              </div>
+              <div className="text-xs text-gray-400">7d ROC</div>
+            </div>
+            <div className="text-center">
+              <div className="mb-1">
+                <SmoothPercentage value={crypto.roc30d} showIcon={false} className="text-lg font-bold px-0" />
+              </div>
+              <div className="text-xs text-gray-400">30d ROC</div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="text-center">
+              <div className="text-lg font-bold text-white font-mono mb-1 transition-all duration-300">
+                {formatCurrency(currentVolume)}
+              </div>
+              <div className="text-xs text-gray-400">Volume</div>
+            </div>
+            <div className="text-center">
+              <div className="text-lg font-bold text-white font-mono mb-1 transition-all duration-300">
+                {formatCurrency(crypto.marketCap)}
+              </div>
+              <div className="text-xs text-gray-400">Market Cap</div>
+            </div>
+          </div>
+          
+          <div className="flex justify-center">
+            <div className="transition-all duration-300">
+              <Sparkline
+                data={crypto.sparklineData}
+                width={80}
+                height={30}
+                color={currentChange >= 0 ? '#10B981' : '#EF4444'}
+              />
+            </div>
+          </div>
+        </div>
+      </Link>
+    );
+  });
+
+  // Memoized table row component
+  const CryptoRow = React.memo(({ crypto }: { crypto: CryptoAsset }) => {
+    const priceData = prices.get(crypto.id);
+    const currentPrice = priceData?.price || crypto.price;
+    const currentChange = priceData?.change24h || crypto.change24h;
+    const currentVolume = priceData?.volume24h || crypto.volume24h;
+    
+    return (
+      <Link key={crypto.id} to={`/coin/${crypto.id}`} className="contents">
+        <tr className="hover:bg-gray-700/30 transition-colors duration-200 border-b border-gray-800/30 last:border-b-0 cursor-pointer">
+          <td className="p-6">
+            <div className="flex items-center gap-4">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm relative overflow-hidden transition-all duration-300"
+                style={{ backgroundColor: crypto.color }}
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse transform -skew-x-12" />
+                {crypto.symbol.slice(0, 2)}
+              </div>
+              <div>
+                <div className="font-semibold text-white text-sm">
+                  {crypto.name}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {crypto.symbol}
+                </div>
+              </div>
+            </div>
+          </td>
+          <td className="p-6">
+            <SmoothPriceDisplay 
+              price={currentPrice}
+              previousPrice={crypto.price}
+              change24h={currentChange}
+              showChange={false}
+            />
+          </td>
+          <td className="p-6">
+            <SmoothPercentage value={currentChange} />
+          </td>
+          <td className="p-6">
+            <SmoothPercentage value={crypto.roc7d} />
+          </td>
+          <td className="p-6">
+            <SmoothPercentage value={crypto.roc30d} />
+          </td>
+          <td className="p-6 font-mono text-white text-sm">
+            <span className="transition-all duration-300">
+              {formatCurrency(currentVolume)}
+            </span>
+          </td>
+          <td className="p-6 font-mono text-white text-sm">
+            <span className="transition-all duration-300">
+              {formatCurrency(crypto.marketCap)}
+            </span>
+          </td>
+          <td className="p-6">
+            <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold uppercase transition-all duration-300 ${getMomentumColor(crypto.momentum)}`}>
+              {getMomentumLabel(crypto.momentum)}
+            </div>
+          </td>
+          <td className="p-6">
+            <div className="flex justify-center">
+              <div className="transition-all duration-300">
+                <Sparkline
+                  data={crypto.sparklineData}
+                  width={60}
+                  height={20}
+                  color={currentChange >= 0 ? '#10B981' : '#EF4444'}
+                />
+              </div>
+            </div>
+          </td>
+        </tr>
+      </Link>
+    );
+  });
 
   if (viewMode === 'cards') {
     return (
@@ -128,14 +343,14 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
           <div className="flex gap-1 bg-gray-700/50 p-1 rounded-xl border border-gray-600">
             <button
               onClick={() => setViewMode('table')}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-300 hover:text-white hover:bg-gray-600/50 transition-all"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-300 hover:text-white hover:bg-gray-600/50 transition-all duration-200"
             >
               <BarChart3 size={16} />
               Table
             </button>
             <button
               onClick={() => setViewMode('cards')}
-              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-purple-500 text-white shadow-lg shadow-purple-500/30 transform scale-105 transition-all"
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-purple-500 text-white shadow-lg shadow-purple-500/30 transform scale-105 transition-all duration-200"
             >
               <Grid size={16} />
               Cards
@@ -144,97 +359,9 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-          {sortedData.map((crypto) => {
-            const priceData = prices.get(crypto.id);
-            const currentPrice = priceData?.price || crypto.price;
-            const currentChange = priceData?.change24h || crypto.change24h;
-            const currentVolume = priceData?.volume24h || crypto.volume24h;
-            
-            return (
-            <Link key={crypto.id} to={`/coin/${crypto.id}`}>
-              <div className="bg-gray-700/30 border border-gray-600 rounded-2xl p-6 hover:transform hover:-translate-y-1 hover:border-purple-500/30 transition-all duration-300 cursor-pointer">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm relative overflow-hidden"
-                    style={{ backgroundColor: crypto.color }}
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse transform -skew-x-12" />
-                    {crypto.symbol.slice(0, 2)}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-white">{crypto.name}</div>
-                    <div className="text-sm text-gray-400">{crypto.symbol}</div>
-                  </div>
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-semibold uppercase ${getMomentumColor(crypto.momentum)}`}>
-                  {getMomentumLabel(crypto.momentum)}
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="text-center">
-                  <div className="mb-1">
-                    <PriceDisplay 
-                      price={currentPrice}
-                      previousPrice={crypto.price}
-                      change24h={currentChange}
-                      size="lg"
-                      showChange={false}
-                    />
-                  </div>
-                  <div className="text-xs text-gray-400">Price</div>
-                </div>
-                <div className="text-center">
-                  <div className={`text-lg font-bold mb-1 ${currentChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatPercentage(currentChange)}
-                  </div>
-                  <div className="text-xs text-gray-400">24h Change</div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="text-center">
-                  <div className={`text-lg font-bold mb-1 ${crypto.roc7d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatPercentage(crypto.roc7d)}
-                  </div>
-                  <div className="text-xs text-gray-400">7d ROC</div>
-                </div>
-                <div className="text-center">
-                  <div className={`text-lg font-bold mb-1 ${crypto.roc30d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {formatPercentage(crypto.roc30d)}
-                  </div>
-                  <div className="text-xs text-gray-400">30d ROC</div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="text-center">
-                  <div className="text-lg font-bold text-white font-mono mb-1">
-                    {formatCurrency(currentVolume)}
-                  </div>
-                  <div className="text-xs text-gray-400">Volume</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold text-white font-mono mb-1">
-                    {formatCurrency(crypto.marketCap)}
-                  </div>
-                  <div className="text-xs text-gray-400">Market Cap</div>
-                </div>
-              </div>
-              
-              <div className="flex justify-center">
-                <Sparkline
-                  data={crypto.sparklineData}
-                  width={80}
-                  height={30}
-                  color={currentChange >= 0 ? '#10B981' : '#EF4444'}
-                />
-              </div>
-              </div>
-            </Link>
-            );
-          })}
+          {sortedData.map((crypto) => (
+            <CryptoCard key={crypto.id} crypto={crypto} />
+          ))}
         </div>
       </div>
     );
@@ -251,14 +378,14 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         <div className="flex gap-1 bg-gray-700/50 p-1 rounded-xl border border-gray-600">
           <button
             onClick={() => setViewMode('table')}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-purple-500 text-white shadow-lg shadow-purple-500/30 transform scale-105 transition-all"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-purple-500 text-white shadow-lg shadow-purple-500/30 transform scale-105 transition-all duration-200"
           >
             <BarChart3 size={16} />
             Table
           </button>
           <button
             onClick={() => setViewMode('cards')}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-300 hover:text-white hover:bg-gray-600/50 transition-all"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg text-gray-300 hover:text-white hover:bg-gray-600/50 transition-all duration-200"
           >
             <Grid size={16} />
             Cards
@@ -282,85 +409,9 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
             </tr>
           </thead>
           <tbody>
-            {sortedData.map((crypto) => {
-              const priceData = prices.get(crypto.id);
-              const currentPrice = priceData?.price || crypto.price;
-              const currentChange = priceData?.change24h || crypto.change24h;
-              const currentVolume = priceData?.volume24h || crypto.volume24h;
-              
-              return (
-              <Link key={crypto.id} to={`/coin/${crypto.id}`} className="contents">
-                <tr className="hover:bg-gray-700/30 transition-colors border-b border-gray-800/30 last:border-b-0 cursor-pointer">
-                <td className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm relative overflow-hidden"
-                      style={{ backgroundColor: crypto.color }}
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse transform -skew-x-12" />
-                      {crypto.symbol.slice(0, 2)}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-white text-sm">
-                        {crypto.name}
-                      </div>
-                      <div className="text-xs text-gray-400">
-                        {crypto.symbol}
-                      </div>
-                    </div>
-                  </div>
-                </td>
-                <td className="p-6">
-                  <PriceDisplay 
-                    price={currentPrice}
-                    previousPrice={crypto.price}
-                    change24h={currentChange}
-                    showChange={false}
-                  />
-                </td>
-                <td className="p-6">
-                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(currentChange)}`}>
-                    {currentChange >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                    {formatPercentage(currentChange)}
-                  </div>
-                </td>
-                <td className="p-6">
-                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(crypto.roc7d)}`}>
-                    {crypto.roc7d >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                    {formatPercentage(crypto.roc7d)}
-                  </div>
-                </td>
-                <td className="p-6">
-                  <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${getChangeColor(crypto.roc30d)}`}>
-                    {crypto.roc30d >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                    {formatPercentage(crypto.roc30d)}
-                  </div>
-                </td>
-                <td className="p-6 font-mono text-white text-sm">
-                  {formatCurrency(currentVolume)}
-                </td>
-                <td className="p-6 font-mono text-white text-sm">
-                  {formatCurrency(crypto.marketCap)}
-                </td>
-                <td className="p-6">
-                  <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold uppercase ${getMomentumColor(crypto.momentum)}`}>
-                    {getMomentumLabel(crypto.momentum)}
-                  </div>
-                </td>
-                <td className="p-6">
-                  <div className="flex justify-center">
-                    <Sparkline
-                      data={crypto.sparklineData}
-                      width={60}
-                      height={20}
-                      color={currentChange >= 0 ? '#10B981' : '#EF4444'}
-                    />
-                  </div>
-                </td>
-                </tr>
-              </Link>
-              );
-            })}
+            {sortedData.map((crypto) => (
+              <CryptoRow key={crypto.id} crypto={crypto} />
+            ))}
           </tbody>
         </table>
       </div>
