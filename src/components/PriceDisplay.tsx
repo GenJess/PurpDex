@@ -117,17 +117,17 @@ const PriceDisplay: React.FC<PriceDisplayProps> = ({
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 min-w-0">
       <span 
-        className={`font-mono font-semibold text-white transition-all duration-150 ${getSizeClasses()} ${getFlashClasses()}`}
+        className={`font-mono font-semibold text-white transition-all duration-150 ${getSizeClasses()} ${getFlashClasses()} w-24 text-right truncate`}
       >
         {formatPrice(displayPrice)}
       </span>
       
       {showChange && (
-        <div className={`flex items-center gap-1 text-xs font-semibold ${getChangeColor()}`}>
+        <div className={`flex items-center gap-1 text-xs font-semibold ${getChangeColor()} w-20 justify-end`}>
           {change24h >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-          {formatPercentage(change24h)}
+          <span className="truncate">{formatPercentage(change24h)}</span>
         </div>
       )}
     </div>

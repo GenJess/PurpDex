@@ -267,18 +267,18 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
       </div>
       
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full table-fixed">
           <thead>
             <tr className="bg-gray-700/30">
-              <SortableHeader field="name">Asset</SortableHeader>
-              <SortableHeader field="price">Price</SortableHeader>
-              <SortableHeader field="change24h">24h Change</SortableHeader>
-              <SortableHeader field="roc7d">7d ROC</SortableHeader>
-              <SortableHeader field="roc30d">30d ROC</SortableHeader>
-              <SortableHeader field="volume24h">Volume (24h)</SortableHeader>
-              <SortableHeader field="marketCap">Market Cap</SortableHeader>
-              <SortableHeader field="momentum">Momentum</SortableHeader>
-              <th className="text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">7d Chart</th>
+              <SortableHeader field="name" className="w-48">Asset</SortableHeader>
+              <SortableHeader field="price" className="w-32">Price</SortableHeader>
+              <SortableHeader field="change24h" className="w-28">24h Change</SortableHeader>
+              <SortableHeader field="roc7d" className="w-24">7d ROC</SortableHeader>
+              <SortableHeader field="roc30d" className="w-24">30d ROC</SortableHeader>
+              <SortableHeader field="volume24h" className="w-28">Volume (24h)</SortableHeader>
+              <SortableHeader field="marketCap" className="w-28">Market Cap</SortableHeader>
+              <SortableHeader field="momentum" className="w-24">Momentum</SortableHeader>
+              <th className="w-20 text-left p-6 text-sm font-semibold text-gray-300 border-b border-gray-700">7d Chart</th>
             </tr>
           </thead>
           <tbody>
