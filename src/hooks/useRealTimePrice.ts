@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { CryptoAsset } from '../types/crypto';
 
 interface PriceUpdate {
@@ -13,19 +13,56 @@ interface UseRealTimePriceReturn {
   prices: Map<string, PriceUpdate>;
   isConnected: boolean;
   lastUpdate: Date | null;
+  connectionType: 'websocket' | 'polling' | 'simulation';
+  reconnectAttempts: number;
 }
+
+interface BinanceTickerData {
+  s: string;    // Symbol
+  c: string;    // Close price (current price)
+  P: string;    // Price change percent (24h)
+  v: string;    // Volume (24h)
+}
+
+interface BinanceStreamData {
+  stream: string;
+  data: BinanceTickerData;
+}
+
+// Symbol mapping for Binance (you'll need to expand this)
+const SYMBOL_MAPPING: Record<string, string> = {
+  'bitcoin': 'BTCUSDT',
+  'ethereum': 'ETHUSDT',
+  'solana': 'SOLUSDT',
+  'cardano': 'ADAUSDT',
+  'avalanche': 'AVAXUSDT',
+  // Add more mappings as needed
+};
 
 export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceReturn => {
   const [prices, setPrices] = useState<Map<string, PriceUpdate>>(new Map());
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const priceHistoryRef = useRef<Map<string, number[]>>(new Map());
+  const [connectionType, setConnectionType] = useState<'websocket' | 'polling' | 'simulation'>('simulation');
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  
+  // Refs
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const priceBufferRef = useRef<Map<string, PriceUpdate[]>>(new Map());
+  const lastPriceUpdateRef = useRef<Map<string, number>>(new Map());
 
-  // Initialize price history for each crypto
+  // Configuration
+  const MAX_RECONNECT_ATTEMPTS = 5;
+  const RECONNECT_DELAY = 3000;
+  const POLLING_INTERVAL = 10000; // 10 seconds for API fallback
+  const PRICE_BUFFER_SIZE = 10;
+  const PRICE_SMOOTHING_THRESHOLD = 50; // ms between price updates for same symbol
+
+  // Initialize prices
   useEffect(() => {
     const initialPrices = new Map<string, PriceUpdate>();
-    const initialHistory = new Map<string, number[]>();
     
     cryptoData.forEach(crypto => {
       initialPrices.set(crypto.id, {
@@ -35,24 +72,216 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
         volume24h: crypto.volume24h,
         timestamp: new Date(),
       });
-      
-      // Initialize with some historical prices for smoother transitions
-      const history = Array.from({ length: 20 }, (_, i) => 
-        crypto.price * (0.98 + Math.random() * 0.04)
-      );
-      initialHistory.set(crypto.id, history);
     });
     
     setPrices(initialPrices);
-    priceHistoryRef.current = initialHistory;
-    setIsConnected(true);
   }, [cryptoData]);
 
-  // Real-time price simulation
-  useEffect(() => {
-    if (!isConnected || cryptoData.length === 0) return;
+  // Smooth price updates to prevent jitter
+  const updatePriceSmooth = useCallback((cryptoId: string, newPrice: PriceUpdate) => {
+    const now = Date.now();
+    const lastUpdate = lastPriceUpdateRef.current.get(cryptoId) || 0;
+    
+    // Throttle updates per symbol to prevent excessive re-renders
+    if (now - lastUpdate < PRICE_SMOOTHING_THRESHOLD) {
+      return;
+    }
+    
+    lastPriceUpdateRef.current.set(cryptoId, now);
+    
+    setPrices(prev => {
+      const updated = new Map(prev);
+      
+      // Add to buffer for smoothing
+      const buffer = priceBufferRef.current.get(cryptoId) || [];
+      buffer.push(newPrice);
+      if (buffer.length > PRICE_BUFFER_SIZE) {
+        buffer.shift();
+      }
+      priceBufferRef.current.set(cryptoId, buffer);
+      
+      // Use the latest price
+      updated.set(cryptoId, newPrice);
+      return updated;
+    });
+    
+    setLastUpdate(new Date());
+  }, []);
 
-    const updatePrices = () => {
+  // WebSocket connection for real-time data
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      return;
+    }
+
+    try {
+      // Get Binance symbols for our crypto assets
+      const symbols = cryptoData
+        .map(crypto => SYMBOL_MAPPING[crypto.id])
+        .filter(Boolean)
+        .map(symbol => `${symbol.toLowerCase()}@ticker`);
+
+      if (symbols.length === 0) {
+        console.warn('No Binance symbols mapped, falling back to polling');
+        startPolling();
+        return;
+      }
+
+      // Binance WebSocket stream URL
+      const streamNames = symbols.join('/');
+      const wsUrl = `wss://stream.binance.com:9443/ws/${streamNames}`;
+      
+      console.log('Connecting to Binance WebSocket:', wsUrl);
+      
+      wsRef.current = new WebSocket(wsUrl);
+      
+      wsRef.current.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+        setConnectionType('websocket');
+        setReconnectAttempts(0);
+      };
+      
+      wsRef.current.onmessage = (event) => {
+        try {
+          const data: BinanceStreamData = JSON.parse(event.data);
+          
+          // Find corresponding crypto asset
+          const cryptoEntry = Object.entries(SYMBOL_MAPPING).find(
+            ([_, symbol]) => data.stream.includes(symbol.toLowerCase())
+          );
+          
+          if (!cryptoEntry) return;
+          
+          const [cryptoId] = cryptoEntry;
+          const tickerData = data.data;
+          
+          const priceUpdate: PriceUpdate = {
+            id: cryptoId,
+            price: parseFloat(tickerData.c),
+            change24h: parseFloat(tickerData.P),
+            volume24h: parseFloat(tickerData.v),
+            timestamp: new Date(),
+          };
+          
+          updatePriceSmooth(cryptoId, priceUpdate);
+          
+        } catch (error) {
+          console.error('Error parsing WebSocket data:', error);
+        }
+      };
+      
+      wsRef.current.onclose = (event) => {
+        console.log('WebSocket closed:', event.code, event.reason);
+        setIsConnected(false);
+        
+        if (!event.wasClean && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          setReconnectAttempts(prev => prev + 1);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, RECONNECT_DELAY * Math.pow(2, reconnectAttempts)); // Exponential backoff
+        } else {
+          console.log('Max reconnect attempts reached, falling back to polling');
+          startPolling();
+        }
+      };
+      
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        startPolling();
+      };
+      
+    } catch (error) {
+      console.error('Failed to connect WebSocket:', error);
+      startPolling();
+    }
+  }, [cryptoData, reconnectAttempts, updatePriceSmooth]);
+
+  // API polling fallback
+  const fetchBinancePrices = useCallback(async () => {
+    try {
+      const symbols = cryptoData
+        .map(crypto => SYMBOL_MAPPING[crypto.id])
+        .filter(Boolean);
+      
+      if (symbols.length === 0) {
+        // Fall back to simulation if no symbols mapped
+        startSimulation();
+        return;
+      }
+
+      // Binance 24hr ticker API
+      const response = await fetch('https://api.binance.com/api/v3/ticker/24hr');
+      
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+      
+      const tickers = await response.json();
+      
+      // Process each ticker
+      tickers.forEach((ticker: any) => {
+        const cryptoEntry = Object.entries(SYMBOL_MAPPING).find(
+          ([_, symbol]) => symbol === ticker.symbol
+        );
+        
+        if (!cryptoEntry) return;
+        
+        const [cryptoId] = cryptoEntry;
+        
+        const priceUpdate: PriceUpdate = {
+          id: cryptoId,
+          price: parseFloat(ticker.lastPrice),
+          change24h: parseFloat(ticker.priceChangePercent),
+          volume24h: parseFloat(ticker.volume),
+          timestamp: new Date(),
+        };
+        
+        updatePriceSmooth(cryptoId, priceUpdate);
+      });
+      
+      if (!isConnected) {
+        setIsConnected(true);
+        setConnectionType('polling');
+      }
+      
+    } catch (error) {
+      console.error('Failed to fetch from Binance API:', error);
+      
+      if (connectionType === 'polling') {
+        setIsConnected(false);
+        // Try WebSocket again after API failure
+        setTimeout(connectWebSocket, 5000);
+      }
+    }
+  }, [cryptoData, isConnected, connectionType, updatePriceSmooth, connectWebSocket]);
+
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    console.log('🔄 Starting API polling fallback');
+    setConnectionType('polling');
+    
+    // Immediate fetch
+    fetchBinancePrices();
+    
+    // Set up interval
+    pollingIntervalRef.current = setInterval(fetchBinancePrices, POLLING_INTERVAL);
+  }, [fetchBinancePrices]);
+
+  // Simulation fallback (your current implementation, simplified)
+  const startSimulation = useCallback(() => {
+    console.log('🎮 Starting price simulation');
+    setConnectionType('simulation');
+    setIsConnected(true);
+    
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    
+    pollingIntervalRef.current = setInterval(() => {
       setPrices(prevPrices => {
         const newPrices = new Map(prevPrices);
         const now = new Date();
@@ -61,64 +290,52 @@ export const useRealTimePrice = (cryptoData: CryptoAsset[]): UseRealTimePriceRet
           const currentPrice = prevPrices.get(crypto.id);
           if (!currentPrice) return;
 
-          // Get price history for this crypto
-          const history = priceHistoryRef.current.get(crypto.id) || [];
+          // Simple simulation (much simplified from your original)
+          const volatility = Math.max(0.0001, Math.min(0.01, 1000000000 / crypto.marketCap));
+          const randomChange = (Math.random() - 0.5) * volatility;
+          const newPrice = Math.max(currentPrice.price * (1 + randomChange), crypto.price * 0.5);
           
-          // Calculate volatility based on market cap (larger coins are less volatile)
-          const volatilityFactor = Math.max(0.0001, Math.min(0.01, 1000000000 / crypto.marketCap));
-          
-          // Generate realistic price movement with momentum
-          const momentum = history.length >= 3 ? 
-            (history[history.length - 1] - history[history.length - 3]) / history[history.length - 3] : 0;
-          
-          // Add some randomness with momentum bias
-          const randomChange = (Math.random() - 0.5) * volatilityFactor;
-          const momentumInfluence = momentum * 0.1; // 10% momentum influence
-          const totalChange = randomChange + momentumInfluence;
-          
-          const newPrice = Math.max(
-            currentPrice.price * (1 + totalChange),
-            crypto.price * 0.5 // Don't go below 50% of original price
-          );
-
-          // Update price history
-          const updatedHistory = [...history.slice(-19), newPrice];
-          priceHistoryRef.current.set(crypto.id, updatedHistory);
-
-          // Calculate 24h change based on price movement
-          const priceChangeFromOriginal = ((newPrice - crypto.price) / crypto.price) * 100;
-          const new24hChange = crypto.change24h + (priceChangeFromOriginal * 0.1);
-
-          // Simulate volume changes
-          const volumeChange = (Math.random() - 0.5) * 0.02; // ±2% volume change
-          const newVolume = Math.max(
-            currentPrice.volume24h * (1 + volumeChange),
-            crypto.volume24h * 0.5
-          );
-
           newPrices.set(crypto.id, {
             id: crypto.id,
             price: newPrice,
-            change24h: new24hChange,
-            volume24h: newVolume,
+            change24h: currentPrice.change24h + (randomChange * 10),
+            volume24h: currentPrice.volume24h * (1 + (Math.random() - 0.5) * 0.02),
             timestamp: now,
           });
         });
-
+        
         setLastUpdate(now);
         return newPrices;
       });
-    };
+    }, 200); // 200ms updates for smooth simulation
+  }, [cryptoData]);
 
-    // Update every 200ms for smooth real-time feel
-    intervalRef.current = setInterval(updatePrices, 200);
+  // Main connection logic
+  useEffect(() => {
+    if (cryptoData.length === 0) return;
 
+    // Try WebSocket first
+    connectWebSocket();
+    
+    // Cleanup
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [isConnected, cryptoData]);
+  }, [connectWebSocket, cryptoData]);
 
-  return { prices, isConnected, lastUpdate };
+  return { 
+    prices, 
+    isConnected, 
+    lastUpdate, 
+    connectionType, 
+    reconnectAttempts 
+  };
 };
