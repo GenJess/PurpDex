@@ -144,8 +144,7 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
-          {sortedData.map((crypto) => (
-          {
+          {sortedData.map((crypto) => {
             const priceData = prices.get(crypto.id);
             const currentPrice = priceData?.price || crypto.price;
             const currentChange = priceData?.change24h || crypto.change24h;
@@ -283,8 +282,7 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
             </tr>
           </thead>
           <tbody>
-            {sortedData.map((crypto) => (
-            {
+            {sortedData.map((crypto) => {
               const priceData = prices.get(crypto.id);
               const currentPrice = priceData?.price || crypto.price;
               const currentChange = priceData?.change24h || crypto.change24h;
