@@ -145,11 +145,13 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
           {sortedData.map((crypto) => (
+          {
             const priceData = prices.get(crypto.id);
             const currentPrice = priceData?.price || crypto.price;
             const currentChange = priceData?.change24h || crypto.change24h;
             const currentVolume = priceData?.volume24h || crypto.volume24h;
             
+            return (
             <Link key={crypto.id} to={`/coin/${crypto.id}`}>
               <div className="bg-gray-700/30 border border-gray-600 rounded-2xl p-6 hover:transform hover:-translate-y-1 hover:border-purple-500/30 transition-all duration-300 cursor-pointer">
               <div className="flex items-center justify-between mb-4">
@@ -232,7 +234,8 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
               </div>
               </div>
             </Link>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -281,11 +284,13 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
           </thead>
           <tbody>
             {sortedData.map((crypto) => (
-            const priceData = prices.get(crypto.id);
-            const currentPrice = priceData?.price || crypto.price;
-            const currentChange = priceData?.change24h || crypto.change24h;
-            const currentVolume = priceData?.volume24h || crypto.volume24h;
-            
+            {
+              const priceData = prices.get(crypto.id);
+              const currentPrice = priceData?.price || crypto.price;
+              const currentChange = priceData?.change24h || crypto.change24h;
+              const currentVolume = priceData?.volume24h || crypto.volume24h;
+              
+              return (
               <Link key={crypto.id} to={`/coin/${crypto.id}`} className="contents">
                 <tr className="hover:bg-gray-700/30 transition-colors border-b border-gray-800/30 last:border-b-0 cursor-pointer">
                 <td className="p-6">
@@ -356,7 +361,8 @@ const CryptoTable: React.FC<CryptoTableProps> = ({ data }) => {
                 </td>
                 </tr>
               </Link>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
